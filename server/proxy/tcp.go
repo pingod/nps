@@ -2,17 +2,18 @@ package proxy
 
 import (
 	"errors"
+	"net"
+	"net/http"
+	"path/filepath"
+	"strconv"
+
+	"github.com/astaxie/beego"
+	"github.com/astaxie/beego/logs"
 	"github.com/cnlh/nps/bridge"
 	"github.com/cnlh/nps/lib/common"
 	"github.com/cnlh/nps/lib/conn"
 	"github.com/cnlh/nps/lib/file"
 	"github.com/cnlh/nps/server/connection"
-	"github.com/cnlh/nps/vender/github.com/astaxie/beego"
-	"github.com/cnlh/nps/vender/github.com/astaxie/beego/logs"
-	"net"
-	"net/http"
-	"path/filepath"
-	"strconv"
 )
 
 type TunnelModeServer struct {
@@ -22,7 +23,7 @@ type TunnelModeServer struct {
 }
 
 //tcp|http|host
-func NewTunnelModeServer(process process, bridge *bridge.Bridge, task *file.Tunnel) *TunnelModeServer {
+func NewTunnelModeServer(process process, bridge NetBridge, task *file.Tunnel) *TunnelModeServer {
 	s := new(TunnelModeServer)
 	s.bridge = bridge
 	s.process = process
@@ -94,7 +95,7 @@ func ProcessTunnel(c *conn.Conn, s *TunnelModeServer) error {
 		logs.Warn("tcp port %d ,client id %d,task id %d connect error %s", s.task.Port, s.task.Client.Id, s.task.Id, err.Error())
 		return err
 	}
-	return s.DealClient(c, s.task.Client, targetAddr, nil, common.CONN_TCP, nil, s.task.Flow)
+	return s.DealClient(c, s.task.Client, targetAddr, nil, common.CONN_TCP, nil, s.task.Flow, s.task.Target.LocalProxy)
 }
 
 //http proxy
@@ -112,5 +113,5 @@ func ProcessHttp(c *conn.Conn, s *TunnelModeServer) error {
 	if err := s.auth(r, c, s.task.Client.Cnf.U, s.task.Client.Cnf.P); err != nil {
 		return err
 	}
-	return s.DealClient(c, s.task.Client, addr, rb, common.CONN_TCP, nil, s.task.Flow)
+	return s.DealClient(c, s.task.Client, addr, rb, common.CONN_TCP, nil, s.task.Flow, s.task.Target.LocalProxy)
 }

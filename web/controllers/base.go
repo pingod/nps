@@ -1,15 +1,17 @@
 package controllers
 
 import (
-	"github.com/cnlh/nps/lib/common"
-	"github.com/cnlh/nps/lib/crypt"
-	"github.com/cnlh/nps/lib/file"
-	"github.com/cnlh/nps/server"
-	"github.com/cnlh/nps/vender/github.com/astaxie/beego"
+	"html"
 	"math"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/astaxie/beego"
+	"github.com/cnlh/nps/lib/common"
+	"github.com/cnlh/nps/lib/crypt"
+	"github.com/cnlh/nps/lib/file"
+	"github.com/cnlh/nps/server"
 )
 
 type BaseController struct {
@@ -26,7 +28,7 @@ func (s *BaseController) Prepare() {
 	// web api verify
 	// param 1 is md5(authKey+Current timestamp)
 	// param 2 is timestamp (It's limited to 20 seconds.)
-	md5Key := s.GetString("auth_key")
+	md5Key := s.getEscapeString("auth_key")
 	timestamp := s.GetIntNoErr("timestamp")
 	configKey := beego.AppConfig.String("auth_key")
 	timeNowUnix := time.Now().Unix()
@@ -39,6 +41,7 @@ func (s *BaseController) Prepare() {
 		s.Ctx.Input.SetData("client_id", s.GetSession("clientId").(int))
 		s.Ctx.Input.SetParam("client_id", strconv.Itoa(s.GetSession("clientId").(int)))
 		s.Data["isAdmin"] = false
+		s.Data["username"] = s.GetSession("username")
 		s.CheckUserAuth()
 	} else {
 		s.Data["isAdmin"] = true
@@ -49,6 +52,10 @@ func (s *BaseController) Prepare() {
 	s.Data["allow_rate_limit"], _ = beego.AppConfig.Bool("allow_rate_limit")
 	s.Data["allow_connection_num_limit"], _ = beego.AppConfig.Bool("allow_connection_num_limit")
 	s.Data["allow_multi_ip"], _ = beego.AppConfig.Bool("allow_multi_ip")
+	s.Data["system_info_display"], _ = beego.AppConfig.Bool("system_info_display")
+	s.Data["allow_tunnel_num_limit"], _ = beego.AppConfig.Bool("allow_tunnel_num_limit")
+	s.Data["allow_local_proxy"], _ = beego.AppConfig.Bool("allow_local_proxy")
+	s.Data["allow_user_change_username"], _ = beego.AppConfig.Bool("allow_user_change_username")
 }
 
 //加载模板
@@ -78,6 +85,11 @@ func (s *BaseController) display(tpl ...string) {
 func (s *BaseController) error() {
 	s.Layout = "public/layout.html"
 	s.TplName = "public/error.html"
+}
+
+//getEscapeString
+func (s *BaseController) getEscapeString(key string) string {
+	return html.EscapeString(s.GetString(key))
 }
 
 //去掉没有err返回值的int

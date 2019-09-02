@@ -1,15 +1,16 @@
 package tool
 
 import (
+	"math"
+	"strconv"
+	"time"
+
+	"github.com/astaxie/beego"
 	"github.com/cnlh/nps/lib/common"
-	"github.com/cnlh/nps/vender/github.com/astaxie/beego"
 	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/load"
 	"github.com/shirou/gopsutil/mem"
 	"github.com/shirou/gopsutil/net"
-	"math"
-	"strconv"
-	"time"
 )
 
 var (
@@ -17,9 +18,11 @@ var (
 	ServerStatus []map[string]interface{}
 )
 
-func init() {
-	ServerStatus = make([]map[string]interface{}, 0, 1500)
-	go getSeverStatus()
+func StartSystemInfo() {
+	if b, err := beego.AppConfig.Bool("system_info_display"); err == nil && b {
+		ServerStatus = make([]map[string]interface{}, 0, 1500)
+		go getSeverStatus()
+	}
 }
 
 func InitAllowPort() {
@@ -86,5 +89,3 @@ func getSeverStatus() {
 		ServerStatus = append(ServerStatus, m)
 	}
 }
-
-

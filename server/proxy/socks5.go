@@ -3,14 +3,14 @@ package proxy
 import (
 	"encoding/binary"
 	"errors"
-	"github.com/cnlh/nps/bridge"
-	"github.com/cnlh/nps/lib/common"
-	"github.com/cnlh/nps/lib/conn"
-	"github.com/cnlh/nps/lib/file"
-	"github.com/cnlh/nps/vender/github.com/astaxie/beego/logs"
 	"io"
 	"net"
 	"strconv"
+
+	"github.com/astaxie/beego/logs"
+	"github.com/cnlh/nps/lib/common"
+	"github.com/cnlh/nps/lib/conn"
+	"github.com/cnlh/nps/lib/file"
 )
 
 const (
@@ -142,7 +142,7 @@ func (s *Sock5ModeServer) doConnect(c net.Conn, command uint8) {
 	}
 	s.DealClient(conn.NewConn(c), s.task.Client, addr, nil, ltype, func() {
 		s.sendReply(c, succeeded)
-	}, s.task.Flow)
+	}, s.task.Flow, s.task.Target.LocalProxy)
 	return
 }
 
@@ -264,7 +264,7 @@ func (s *Sock5ModeServer) Start() error {
 }
 
 //new
-func NewSock5ModeServer(bridge *bridge.Bridge, task *file.Tunnel) *Sock5ModeServer {
+func NewSock5ModeServer(bridge NetBridge, task *file.Tunnel) *Sock5ModeServer {
 	s := new(Sock5ModeServer)
 	s.bridge = bridge
 	s.task = task

@@ -4,6 +4,15 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/astaxie/beego"
+	"github.com/astaxie/beego/logs"
 	"github.com/cnlh/nps/lib/common"
 	"github.com/cnlh/nps/lib/conn"
 	"github.com/cnlh/nps/lib/crypt"
@@ -12,14 +21,6 @@ import (
 	"github.com/cnlh/nps/lib/version"
 	"github.com/cnlh/nps/server/connection"
 	"github.com/cnlh/nps/server/tool"
-	"github.com/cnlh/nps/vender/github.com/astaxie/beego"
-	"github.com/cnlh/nps/vender/github.com/astaxie/beego/logs"
-	"net"
-	"os"
-	"strconv"
-	"strings"
-	"sync"
-	"time"
 )
 
 type Client struct {
@@ -146,13 +147,12 @@ func (s *Bridge) GetHealthFromClient(id int, c *conn.Conn) {
 			})
 		}
 	}
-	s.DelClient(id, )
+	s.DelClient(id)
 }
 
 //验证失败，返回错误验证flag，并且关闭连接
 func (s *Bridge) verifyError(c *conn.Conn) {
 	c.Write([]byte(common.VERIFY_EER))
-	c.Conn.Close()
 }
 
 func (s *Bridge) verifySuccess(c *conn.Conn) {
@@ -249,6 +249,8 @@ func (s *Bridge) typeDeal(typeVal string, c *conn.Conn, id int) {
 	case common.WORK_SECRET:
 		if b, err := c.GetShortContent(32); err == nil {
 			s.SecretChan <- conn.NewSecret(string(b), c)
+		} else {
+			logs.Error("secret error, failed to match the key successfully")
 		}
 	case common.WORK_FILE:
 		muxConn := mux.NewMux(c.Conn, s.tunnelType)
@@ -258,9 +260,9 @@ func (s *Bridge) typeDeal(typeVal string, c *conn.Conn, id int) {
 	case common.WORK_P2P:
 		//read md5 secret
 		if b, err := c.GetShortContent(32); err != nil {
-			return
+			logs.Error("p2p error,", err.Error())
 		} else if t := file.GetDb().GetTaskByMd5Password(string(b)); t == nil {
-			return
+			logs.Error("p2p error, failed to match the key successfully")
 		} else {
 			if v, ok := s.Client.Load(t.Client.Id); !ok {
 				return
@@ -291,11 +293,16 @@ func (s *Bridge) register(c *conn.Conn) {
 	}
 }
 
-func (s *Bridge) SendLinkInfo(clientId int, link *conn.Link, linkAddr string, t *file.Tunnel) (target net.Conn, err error) {
+func (s *Bridge) SendLinkInfo(clientId int, link *conn.Link, t *file.Tunnel) (target net.Conn, err error) {
+	//if the proxy type is local
+	if link.LocalProxy {
+		target, err = net.Dial("tcp", link.Host)
+		return
+	}
 	if v, ok := s.Client.Load(clientId); ok {
 		//If ip is restricted to do ip verification
 		if s.ipVerify {
-			ip := common.GetIpByAddr(linkAddr)
+			ip := common.GetIpByAddr(link.RemoteAddr)
 			if v, ok := s.Register.Load(ip); !ok {
 				return nil, errors.New(fmt.Sprintf("The ip %s is not in the validation list", ip))
 			} else {
@@ -466,6 +473,7 @@ loop:
 						tl.Remark = t.Remark
 					} else {
 						tl.Remark = t.Remark + "_" + strconv.Itoa(tl.Port)
+						tl.Target = new(file.Target)
 						if t.TargetAddr != "" {
 							tl.Target.TargetStr = t.TargetAddr + ":" + strconv.Itoa(targets[i])
 						} else {

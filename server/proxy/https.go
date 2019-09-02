@@ -1,18 +1,19 @@
 package proxy
 
 import (
-	"github.com/cnlh/nps/bridge"
-	"github.com/cnlh/nps/lib/common"
-	"github.com/cnlh/nps/lib/conn"
-	"github.com/cnlh/nps/lib/crypt"
-	"github.com/cnlh/nps/lib/file"
-	"github.com/cnlh/nps/vender/github.com/astaxie/beego"
-	"github.com/cnlh/nps/vender/github.com/astaxie/beego/logs"
-	"github.com/pkg/errors"
 	"net"
 	"net/http"
 	"net/url"
 	"sync"
+
+	"github.com/astaxie/beego"
+	"github.com/astaxie/beego/logs"
+	"github.com/cnlh/nps/lib/cache"
+	"github.com/cnlh/nps/lib/common"
+	"github.com/cnlh/nps/lib/conn"
+	"github.com/cnlh/nps/lib/crypt"
+	"github.com/cnlh/nps/lib/file"
+	"github.com/pkg/errors"
 )
 
 type HttpsServer struct {
@@ -21,12 +22,17 @@ type HttpsServer struct {
 	httpsListenerMap sync.Map
 }
 
-func NewHttpsServer(l net.Listener, bridge *bridge.Bridge) *HttpsServer {
+func NewHttpsServer(l net.Listener, bridge NetBridge, useCache bool, cacheLen int) *HttpsServer {
 	https := &HttpsServer{listener: l}
 	https.bridge = bridge
+	https.useCache = useCache
+	if useCache {
+		https.cache = cache.New(cacheLen)
+	}
 	return https
 }
 
+//start https server
 func (https *HttpsServer) Start() error {
 	if b, err := beego.AppConfig.Bool("https_just_proxy"); err == nil && b {
 		conn.Accept(https.listener, func(c net.Conn) {
@@ -81,16 +87,19 @@ func (https *HttpsServer) Start() error {
 	return nil
 }
 
+// close
 func (https *HttpsServer) Close() error {
 	return https.listener.Close()
 }
 
+// new https server by cert and key file
 func (https *HttpsServer) NewHttps(l net.Listener, certFile string, keyFile string) {
 	go func() {
 		logs.Error(https.NewServer(0, "https").ServeTLS(l, certFile, keyFile))
 	}()
 }
 
+//handle the https which is just proxy to other client
 func (https *HttpsServer) handleHttps(c net.Conn) {
 	hostName, rb := GetServerNameFromClientHello(c)
 	var targetAddr string
@@ -116,7 +125,7 @@ func (https *HttpsServer) handleHttps(c net.Conn) {
 		logs.Warn(err.Error())
 	}
 	logs.Trace("new https connection,clientId %d,host %s,remote address %s", host.Client.Id, r.Host, c.RemoteAddr().String())
-	https.DealClient(conn.NewConn(c), host.Client, targetAddr, rb, common.CONN_TCP, nil, host.Flow)
+	https.DealClient(conn.NewConn(c), host.Client, targetAddr, rb, common.CONN_TCP, nil, host.Flow, host.Target.LocalProxy)
 }
 
 type HttpsListener struct {
@@ -124,10 +133,12 @@ type HttpsListener struct {
 	parentListener net.Listener
 }
 
+// https listener
 func NewHttpsListener(l net.Listener) *HttpsListener {
 	return &HttpsListener{parentListener: l, acceptConn: make(chan *conn.Conn)}
 }
 
+// accept
 func (httpsListener *HttpsListener) Accept() (net.Conn, error) {
 	httpsConn := <-httpsListener.acceptConn
 	if httpsConn == nil {
@@ -136,19 +147,25 @@ func (httpsListener *HttpsListener) Accept() (net.Conn, error) {
 	return httpsConn, nil
 }
 
+// close
 func (httpsListener *HttpsListener) Close() error {
 	return nil
 }
 
+// addr
 func (httpsListener *HttpsListener) Addr() net.Addr {
 	return httpsListener.parentListener.Addr()
 }
 
+// get server name from connection by read client hello bytes
 func GetServerNameFromClientHello(c net.Conn) (string, []byte) {
 	buf := make([]byte, 4096)
 	data := make([]byte, 4096)
 	n, err := c.Read(buf)
 	if err != nil {
+		return "", nil
+	}
+	if n < 42 {
 		return "", nil
 	}
 	copy(data, buf[:n])
@@ -157,6 +174,7 @@ func GetServerNameFromClientHello(c net.Conn) (string, []byte) {
 	return clientHello.GetServerName(), buf[:n]
 }
 
+// build https request
 func buildHttpsRequest(hostName string) *http.Request {
 	r := new(http.Request)
 	r.RequestURI = "/"

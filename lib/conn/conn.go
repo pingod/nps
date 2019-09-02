@@ -6,13 +6,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
-	"github.com/cnlh/nps/lib/common"
-	"github.com/cnlh/nps/lib/crypt"
-	"github.com/cnlh/nps/lib/file"
-	"github.com/cnlh/nps/lib/mux"
-	"github.com/cnlh/nps/lib/pool"
-	"github.com/cnlh/nps/lib/rate"
-	"github.com/cnlh/nps/vender/github.com/xtaci/kcp"
 	"io"
 	"net"
 	"net/http"
@@ -21,6 +14,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cnlh/nps/lib/common"
+	"github.com/cnlh/nps/lib/crypt"
+	"github.com/cnlh/nps/lib/file"
+	"github.com/cnlh/nps/lib/mux"
+	"github.com/cnlh/nps/lib/pool"
+	"github.com/cnlh/nps/lib/rate"
+	"github.com/xtaci/kcp-go"
 )
 
 type Conn struct {
@@ -373,7 +374,7 @@ func CopyWaitGroup(conn1, conn2 net.Conn, crypt bool, snappy bool, rate *rate.Ra
 }
 
 //get crypt or snappy conn
-func GetConn(conn net.Conn, cpt, snappy bool, rt *rate.Rate, isServer bool) (io.ReadWriteCloser) {
+func GetConn(conn net.Conn, cpt, snappy bool, rt *rate.Rate, isServer bool) io.ReadWriteCloser {
 	if cpt {
 		if isServer {
 			return rate.NewRateConn(crypt.NewTlsServerConn(conn), rt)
@@ -383,4 +384,18 @@ func GetConn(conn net.Conn, cpt, snappy bool, rt *rate.Rate, isServer bool) (io.
 		return rate.NewRateConn(NewSnappyConn(conn), rt)
 	}
 	return rate.NewRateConn(conn, rt)
+}
+
+type LenConn struct {
+	conn io.Writer
+	Len  int
+}
+
+func NewLenConn(conn io.Writer) *LenConn {
+	return &LenConn{conn: conn}
+}
+func (c *LenConn) Write(p []byte) (n int, err error) {
+	n, err = c.conn.Write(p)
+	c.Len += n
+	return
 }
